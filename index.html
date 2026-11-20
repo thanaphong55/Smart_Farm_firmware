@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Farm | ระบบรดน้ำอัจฉริยะ</title>
+<style>
+:root{--green:#2f6b3c;--light:#edf5ed;--ink:#203126;--muted:#6b7b70;--white:#fff;--orange:#e49a35;--red:#d9534f}
+*{box-sizing:border-box}body{margin:0;font-family:Tahoma,Arial,sans-serif;background:#f4f7f3;color:var(--ink)}
+header{background:linear-gradient(120deg,#214f31,#4c8b4e);color:white;padding:28px max(20px,calc((100% - 1100px)/2))}
+header h1{margin:0 0 8px;font-size:clamp(24px,4vw,34px)}header p{margin:0;color:#e1eee1}
+main{max-width:1100px;margin:24px auto;padding:0 18px}
+.top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.pill{padding:8px 13px;border-radius:30px;background:#e4f3e5;color:var(--green);font-size:13px;font-weight:bold}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:15px}
+.card{background:var(--white);border-radius:16px;padding:19px;box-shadow:0 5px 18px #19351a0c;border:1px solid #e7eee6}
+.metric small{color:var(--muted)}.value{font-size:32px;font-weight:bold;margin:13px 0 5px}.unit{font-size:15px;color:var(--muted);font-weight:normal}
+.sub{font-size:12px;color:var(--muted)}
+.section{margin-top:18px}.section h2{font-size:19px;margin:0 0 13px}
+.controls{display:grid;grid-template-columns:1.2fr 1fr;gap:15px}
+button{border:0;border-radius:10px;padding:12px 18px;font-size:15px;font-weight:bold;cursor:pointer}
+.primary{background:var(--green);color:white}.secondary{background:#e8f1e8;color:var(--green)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0}
+input[type=range]{width:100%;accent-color:var(--green)}
+.status{display:inline-block;padding:5px 10px;border-radius:20px;font-size:12px;background:#e8f1e8;color:var(--green)}
+.status.warn{background:#fff1d9;color:#956014}.status.off{background:#f1eeee;color:#777}
+.log{max-height:180px;overflow:auto;font-size:13px;color:var(--muted);line-height:1.8}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:28px}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.controls{grid-template-columns:1fr}}
+@media(max-width:420px){.grid{grid-template-columns:1fr}.value{font-size:28px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🌱 Smart Farm</h1>
+  <p>ระบบตรวจวัดความชื้นและควบคุมการรดน้ำอัตโนมัติด้วย ESP32</p>
+</header>
+<main>
+  <div class="top">
+    <div><strong>ภาพรวมแปลงปลูก</strong><div class="sub">ติดตามสภาพแวดล้อมและสถานะอุปกรณ์แบบเรียลไทม์</div></div>
+    <span id="connection" class="pill">กำลังตรวจสอบการเชื่อมต่อ...</span>
+  </div>
+
+  <div class="grid">
+    <div class="card metric"><small>💧 ความชื้นในดิน</small><div class="value" id="soil">--<span class="unit"> %</span></div><span id="soilState" class="status">รอข้อมูล</span></div>
+    <div class="card metric"><small>🌡️ อุณหภูมิ</small><div class="value" id="temp">--<span class="unit"> °C</span></div><span class="sub">เซนเซอร์ DHT22</span></div>
+    <div class="card metric"><small>💦 ความชื้นอากาศ</small><div class="value" id="humidity">--<span class="unit"> %</span></div><span class="sub">เซนเซอร์ DHT22</span></div>
+    <div class="card metric"><small>🛢️ ระดับน้ำ</small><div class="value" id="water">--</div><span id="waterState" class="status">รอข้อมูล</span></div>
+  </div>
+
+  <div class="controls section">
+    <div class="card">
+      <h2>🚿 ควบคุมปั๊มน้ำ</h2>
+      <div class="row"><span>สถานะปั๊มน้ำ</span><strong id="pumpState">ปิด</strong></div>
+      <div class="row"><button class="primary" id="pumpOn" onclick="setPump(true)">เปิดปั๊มน้ำ</button><button class="secondary" id="pumpOff" onclick="setPump(false)">ปิดปั๊มน้ำ</button></div>
+      <p class="sub">ควบคุมรีเลย์ที่ต่อกับปั๊มน้ำ DC 12V</p>
+    </div>
+    <div class="card">
+      <h2>⚙️ ตั้งค่ารดน้ำอัตโนมัติ</h2>
+      <div class="row"><label for="threshold">เกณฑ์ความชื้นในดิน</label><strong><span id="thresholdText">35</span>%</strong></div>
+      <input id="threshold" type="range" min="10" max="80" value="35" oninput="thresholdText.textContent=this.value">
+      <div class="row"><span class="sub">ถ้าความชื้นต่ำกว่าค่านี้ ระบบจะสั่งเปิดปั๊ม</span></div>
+      <button class="primary" onclick="saveThreshold()">บันทึกค่า</button>
+    </div>
+  </div>
+
+  <div class="section card">
+    <h2>📋 สถานะระบบ</h2>
+    <div class="row"><span>โหมดการทำงาน</span><span class="status" id="mode">อัตโนมัติ</span></div>
+    <div class="row"><span>การเชื่อมต่อ ESP32</span><span id="espStatus" class="status off">ยังไม่เชื่อมต่อ</span></div>
+    <div class="row"><span>อัปเดตล่าสุด</span><span id="updated" class="sub">-</span></div>
+    <hr style="border:0;border-top:1px solid #edf0ed">
+    <div class="log" id="log">เริ่มต้นหน้าเว็บแล้ว — รอรับข้อมูลจาก ESP32</div>
+  </div>
+</main>
+<footer>Smart Farm Project · ESP32 + Capacitive Soil Moisture + DHT22 + Float Switch + Relay</footer>
+
+<script>
+// แก้ URL นี้ให้เป็น IP ของ ESP32 เช่น http://192.168.1.50
+const ESP32_URL = "http://192.168.1.50";
+let demoMode = true; // เปลี่ยนเป็น false เมื่อต่อ ESP32 จริง
+
+const $ = id => document.getElementById(id);
+function addLog(message){
+  const time = new Date().toLocaleTimeString('th-TH');
+  $('log').innerHTML = `${time} — ${message}<br>` + $('log').innerHTML;
+}
+function showData(d){
+  $('soil').innerHTML = `${d.soil}<span class="unit"> %</span>`;
+  $('temp').innerHTML = `${d.temperature}<span class="unit"> °C</span>`;
+  $('humidity').innerHTML = `${d.humidity}<span class="unit"> %</span>`;
+  $('water').textContent = d.water ? 'มีน้ำ' : 'น้ำต่ำ';
+  $('waterState').textContent = d.water ? 'ระดับน้ำปกติ' : 'โปรดเติมน้ำ';
+  $('waterState').className = d.water ? 'status' : 'status warn';
+  $('soilState').textContent = d.soil < Number($('threshold').value) ? 'ดินแห้ง' : 'ความชื้นเพียงพอ';
+  $('soilState').className = d.soil < Number($('threshold').value) ? 'status warn' : 'status';
+  $('pumpState').textContent = d.pump ? 'เปิดอยู่' : 'ปิดอยู่';
+  $('pumpState').style.color = d.pump ? '#2f8b45' : '#6b7b70';
+  $('updated').textContent = new Date().toLocaleString('th-TH');
+}
+async function loadStatus(){
+  if(demoMode){
+    const demo = {soil:Math.floor(25+Math.random()*35),temperature:(29+Math.random()*4).toFixed(1),
+      humidity:Math.floor(55+Math.random()*20),water:true,pump:false};
+    showData(demo); $('connection').textContent='โหมดตัวอย่าง'; $('espStatus').textContent='แสดงข้อมูลจำลอง';
+    $('espStatus').className='status warn'; return;
+  }
+  try{
+    const r=await fetch(`${ESP32_URL}/api/status`,{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    showData(await r.json()); $('connection').textContent='เชื่อมต่อ ESP32 แล้ว';
+    $('espStatus').textContent='ออนไลน์'; $('espStatus').className='status';
+  }catch(e){
+    $('connection').textContent='เชื่อมต่อไม่ได้'; $('espStatus').textContent='ออฟไลน์';
+    $('espStatus').className='status off'; addLog('เชื่อมต่อ ESP32 ไม่สำเร็จ: '+e.message);
+  }
+}
+async function postApi(path,body){
+  if(demoMode){addLog('โหมดตัวอย่าง: ไม่ได้ส่งคำสั่งไปยังอุปกรณ์จริง');return;}
+  try{
+    const r=await fetch(ESP32_URL+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    addLog('ส่งคำสั่งสำเร็จ'); await loadStatus();
+  }catch(e){addLog('ส่งคำสั่งไม่สำเร็จ: '+e.message);}
+}
+function setPump(on){postApi('/api/pump',{on});}
+function saveThreshold(){postApi('/api/threshold',{value:Number($('threshold').value)});addLog('ตั้งค่าเกณฑ์ความชื้นเป็น '+$('threshold').value+'%');}
+loadStatus(); setInterval(loadStatus,3000);
+</script>
+</body>
+</html>
